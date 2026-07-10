@@ -32,15 +32,13 @@ impl Archive {
       U16CString::from_os_str(path.as_ref()).map_err(|_| StormError::InteriorNul)?.into_vec()
     };
     let mut handle: HANDLE = ptr::null_mut();
-    unsafe {
-      unsafe_try_call!(SFileOpenArchive(
-        cpath.as_ptr(),
-        0,
-        flags.bits(),
-        &mut handle as *mut HANDLE,
-      ));
-      Ok(Archive { handle })
-    }
+    unsafe_try_call!(SFileOpenArchive(
+      cpath.as_ptr(),
+      0,
+      flags.bits(),
+      &mut handle as *mut HANDLE,
+    ));
+    Ok(Archive { handle })
   }
 
   /// Quick check if the file exists within MPQ archive, without opening it
@@ -86,6 +84,7 @@ impl std::ops::Drop for Archive {
 /// Opened file
 #[derive(Debug)]
 pub struct File<'a> {
+  #[allow(dead_code)]
   archive: &'a Archive,
   file_handle: HANDLE,
   size: Option<u64>,
