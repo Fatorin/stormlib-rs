@@ -1,0 +1,51 @@
+name: Generate bindings
+
+# Manually triggered: regenerates the pre-built bindgen bindings for each
+# platform against the current deps/StormLib headers. Download the artifacts
+# and commit them into crates/stormlib-sys/src/.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bindgen:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            file: bindings_linux.rs
+          - os: macos-latest
+            file: bindings_macos.rs
+          - os: windows-latest
+            file: bindings_windows.rs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install libclang (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+
+      - name: Install libclang (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+
+      # windows-latest ships LLVM preinstalled; clang-sys finds it automatically.
+
+      - name: Generate bindings
+        run: cargo run -p stormlib-bindgen
+
+      - name: Show diff against committed bindings
+        run: git diff --stat -- crates/stormlib-sys/src/${{ matrix.file }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.file }}
+          path: crates/stormlib-sys/src/${{ matrix.file }}
+          if-no-files-found: error

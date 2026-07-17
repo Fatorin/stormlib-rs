@@ -32,15 +32,13 @@ impl Archive {
       U16CString::from_os_str(path.as_ref()).map_err(|_| StormError::InteriorNul)?.into_vec()
     };
     let mut handle: HANDLE = ptr::null_mut();
-    unsafe {
-      unsafe_try_call!(SFileOpenArchive(
-        cpath.as_ptr(),
-        0,
-        flags.bits(),
-        &mut handle as *mut HANDLE,
-      ));
-      Ok(Archive { handle })
-    }
+    unsafe_try_call!(SFileOpenArchive(
+      cpath.as_ptr(),
+      0,
+      flags.bits(),
+      &mut handle as *mut HANDLE,
+    ));
+    Ok(Archive { handle })
   }
 
   /// Quick check if the file exists within MPQ archive, without opening it
@@ -48,7 +46,7 @@ impl Archive {
     let cpath = CString::new(path)?;
     unsafe {
       let r = SFileHasFile(self.handle, cpath.as_ptr());
-      let err = GetLastError();
+      let err = SErrGetLastError();
       if !r && err != ERROR_FILE_NOT_FOUND {
         return Err(From::from(ErrorCode(err)));
       }
@@ -86,6 +84,8 @@ impl std::ops::Drop for Archive {
 /// Opened file
 #[derive(Debug)]
 pub struct File<'a> {
+  // Holds the borrow so the archive outlives every open file; never read.
+  #[allow(dead_code)]
   archive: &'a Archive,
   file_handle: HANDLE,
   size: Option<u64>,
@@ -95,18 +95,18 @@ pub struct File<'a> {
 impl<'a> File<'a> {
   /// Retrieves a size of the file within archive
   pub fn get_size(&mut self) -> Result<u64> {
-    if let Some(size) = self.size.clone() {
+    if let Some(size) = self.size {
       Ok(size)
     } else {
       let mut high: DWORD = 0;
       let low = unsafe { SFileGetFileSize(self.file_handle, &mut high as *mut DWORD) };
       if low == SFILE_INVALID_SIZE {
-        return Err(From::from(ErrorCode(unsafe { GetLastError() })));
+        return Err(From::from(ErrorCode(unsafe { SErrGetLastError() })));
       }
       let high = (high as u64) << 32;
       let size = high | (low as u64);
       self.size = Some(size);
-      return Ok(size);
+      Ok(size)
     }
   }
 
@@ -115,19 +115,18 @@ impl<'a> File<'a> {
     if self.need_reset {
       unsafe {
         if SFileSetFilePointer(self.file_handle, 0, ptr::null_mut(), 0) == SFILE_INVALID_SIZE {
-          return Err(From::from(ErrorCode(GetLastError())));
+          return Err(From::from(ErrorCode(SErrGetLastError())));
         }
       }
     }
 
     let size = self.get_size()?;
-    let mut buf = Vec::<u8>::with_capacity(size as usize);
-    buf.resize(buf.capacity(), 0);
+    let mut buf = vec![0u8; size as usize];
     let mut read: DWORD = 0;
     self.need_reset = true;
     unsafe_try_call!(SFileReadFile(
       self.file_handle,
-      std::mem::transmute(buf.as_mut_ptr()),
+      buf.as_mut_ptr().cast(),
       size as u32,
       &mut read as *mut DWORD,
       ptr::null_mut(),
@@ -155,8 +154,8 @@ fn test_read() {
   )
   .unwrap();
 
-  assert_eq!(archive.has_file("invalid").unwrap(), false);
-  assert_eq!(archive.has_file("war3map.j").unwrap(), true);
+  assert!(!archive.has_file("invalid").unwrap());
+  assert!(archive.has_file("war3map.j").unwrap());
   let mut f = archive.open_file("war3map.j").unwrap();
   assert_eq!(f.get_size().unwrap(), 14115);
   assert_eq!(

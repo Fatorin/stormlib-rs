@@ -1,7 +1,7 @@
 use bitflags::bitflags;
-use stormlib_sys;
 
 bitflags! {
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub struct OpenArchiveFlags: u32 {
     const STREAM_PROVIDER_PARTIAL   = stormlib_sys::STREAM_PROVIDER_PARTIAL;
     const STREAM_PROVIDER_MPQE      = stormlib_sys::STREAM_PROVIDER_MPQE;
